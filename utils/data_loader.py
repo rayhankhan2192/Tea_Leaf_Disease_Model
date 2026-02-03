@@ -3,9 +3,8 @@ import cv2
 import torch
 import numpy as np
 import logging
-from PIL import Image
-from torch.utils.data import Dataset, DataLoader, random_split
-from typing import Tuple, List, Optional, Dict
+from torch.utils.data import Dataset, DataLoader
+from typing import Tuple, List, Optional
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import train_test_split
@@ -27,6 +26,7 @@ class TeaLeafDataset(Dataset):
         self.subset = subset
         self.image_size = image_size
 
+        # Set class names once
         if class_names is not None:
             self.class_names = class_names  
         else:
@@ -35,190 +35,83 @@ class TeaLeafDataset(Dataset):
                 if os.path.isdir(os.path.join(data_dir, entry))
             ])
 
-        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.class_names)}
-        self.idx_to_class = {idx: cls_name for cls_name, idx in self.class_to_idx.items()}
-
-        logger.info("Class to index mapping:")
-        for cls_name, idx in self.class_to_idx.items():
-            logger.info(f"  {cls_name}: {idx}")
-
-        self.samples = self.load_samples()
-        self.class_weights = self.calculate_class_weights()
-
-        logger.info(f"Total samples in '{subset}' set: {len(self.samples)}")
-        self.log_class_distribution()
-        logger.info(f"Class Weights (Tensor): {self.class_weights}\n")
+        self.class_to_idx = {name: idx for idx, name in enumerate(self.class_names)}
+        
+        # Only perform heavy disk operations if we are the 'full' dataset
+        if subset == 'full':
+            self.samples = self.load_samples()
+            self.targets = [s[1] for s in self.samples]
+            self.class_weights = self.calculate_class_weights()
+        else:
+            self.samples = []
+            self.targets = []
+            self.class_weights = None
 
     def load_samples(self) -> List[Tuple[str, int]]:
-        """Load all image paths and corresponding labels"""
         samples = []
         for class_name in self.class_names:
             class_path = os.path.join(self.data_dir, class_name)
+            if not os.path.exists(class_path): continue
             for img_name in os.listdir(class_path):
-                img_path = os.path.join(class_path, img_name)
                 if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    samples.append((img_path, self.class_to_idx[class_name]))
+                    samples.append((os.path.join(class_path, img_name), self.class_to_idx[class_name]))
         return samples
 
     def calculate_class_weights(self) -> torch.Tensor:
-        """Calculate balanced class weights"""
         class_counts = np.zeros(len(self.class_names), dtype=np.int64)
-        for _, label in self.samples:
-            class_counts[label] += 1
+        for t in self.targets:
+            class_counts[t] += 1
+        total = len(self.targets)
+        weights = [total / (len(self.class_names) * c) if c > 0 else 0.0 for c in class_counts]
+        return torch.tensor(weights, dtype=torch.float32)
 
-        total_samples = len(self.samples)
-        class_weights = []
-        for count in class_counts:
-            if count == 0:
-                class_weights.append(0.0)
-                logger.warning("Found a class with zero samples, assigning weight 0.0")
-            else:
-                weight = total_samples / (len(self.class_names) * count)
-                class_weights.append(weight)
-        return torch.tensor(class_weights, dtype=torch.float32)
+    def log_summary(self):
+        logger.info(f"Dataset Summary: {self.subset}")
+        logger.info(f"Total samples: {len(self.samples)}")
+        counts = np.bincount(self.targets, minlength=len(self.class_names))
+        for name, count in zip(self.class_names, counts):
+            logger.info(f"  {name}: {count}")
 
-    def log_class_distribution(self):
-        """Log the distribution of samples per class"""
-        class_counts = np.zeros(len(self.class_names), dtype=np.int64)
-        for _, label in self.samples:
-            class_counts[label] += 1
-
-        logger.info("Class distribution:")
-        for cls_name, count in zip(self.class_names, class_counts):
-            logger.info(f"  {cls_name}: {count}")
-
-    def __len__(self) -> int:
-        return len(self.samples)
+    def __len__(self) -> int: return len(self.samples)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         img_path, label = self.samples[idx]
-        image = self._load_and_preprocess_image(img_path)
-
+        image = cv2.imread(img_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, self.image_size)
+        image = image.astype(np.float32) / 255.0
         if self.transform:
             image = self.transform(image=image)['image']
-
         return image, label
 
-    def _load_and_preprocess_image(self, img_path: str) -> np.ndarray:
-        """Safely load an image and resize/normalize it"""
-        try:
-            image = cv2.imread(img_path, cv2.IMREAD_COLOR)
-            if image is None:
-                raise FileNotFoundError(f"Unable to read image at: {img_path}")
-
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = cv2.resize(image, self.image_size)
-            image = image.astype(np.float32) / 255.0
-            return image
-
-        except Exception as e:
-            logger.error(f"Error loading image {img_path}: {e}")
-            return np.zeros((*self.image_size, 3), dtype=np.float32)
-
-def get_tea_leaf_transforms(image_size=(224, 224), mode='train'):
+def get_tea_leaf_transforms(image_size, mode):
     if mode == 'train':
         return A.Compose([
             A.Rotate(limit=15, p=0.7),
-            A.RandomScale(scale_limit=0.1, p=0.5),
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),
-            A.Resize(*image_size),
-            A.Normalize(mean=(0.485, 0.456, 0.406),
-                        std=(0.229, 0.224, 0.225)),
+            A.RandomBrightnessContrast(p=0.2),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
         ])
-    else:
-        return A.Compose([
-            A.Resize(*image_size),
-            A.Normalize(mean=(0.485, 0.456, 0.406),
-                        std=(0.229, 0.224, 0.225)),
-            ToTensorV2()
-        ])
-def create_data_loaders(data_dir: str, 
-                       batch_size: int = 32, 
-                       train_split: float = 0.8,
-                       val_split: float = 0.1,
-                       test_split: float = 0.1,
-                       image_size: Tuple[int, int] = (224, 224),
-                       num_workers: int = 1,
-                       pin_memory: bool = True,
-                       seed: int = 42) -> Tuple[DataLoader, DataLoader, DataLoader, torch.Tensor]:
-    assert abs(train_split + val_split + test_split - 1.0) < 1e-6, "Splits must sum to 1.0"
+    return A.Compose([
+        A.Resize(image_size[0], image_size[1]),
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+    ])
 
-    train_transform = get_tea_leaf_transforms(image_size, mode='train')
-    val_transform = get_tea_leaf_transforms(image_size, mode='val')
-    test_transform = get_tea_leaf_transforms(image_size, mode='test')
+def create_data_loaders(data_dir, batch_size=32, class_names=None, image_size=(224, 224)):
+    # Scan disk ONLY ONCE
+    full_ds = TeaLeafDataset(data_dir, subset='full', class_names=class_names, image_size=image_size)
+    
+    train_idx, temp_idx = train_test_split(range(len(full_ds)), train_size=0.8, stratify=full_ds.targets, random_state=42)
+    val_idx, test_idx = train_test_split(temp_idx, train_size=0.5, stratify=[full_ds.targets[i] for i in temp_idx], random_state=42)
 
-    full_dataset = TeaLeafDataset(data_dir, transform=None, subset='full', image_size=image_size)
-    total_size = len(full_dataset)
+    def build_subset(indices, subset, mode):
+        ds = TeaLeafDataset(data_dir, transform=get_tea_leaf_transforms(image_size, mode), subset=subset, class_names=full_ds.class_names)
+        ds.samples = [full_ds.samples[i] for i in indices]
+        ds.targets = [s[1] for s in ds.samples]
+        ds.log_summary() # Logs once per split
+        return DataLoader(ds, batch_size=batch_size, shuffle=(mode=='train'))
 
-    train_size = int(train_split * total_size)
-    val_size = int(val_split * total_size)
-    test_size = total_size - train_size - val_size
-
-    labels = [sample[1] for sample in full_dataset.samples]
-    train_indices, temp_indices = train_test_split(
-        range(total_size),
-        train_size=train_size,
-        stratify=labels,
-        random_state=seed
-    )
-
-    temp_labels = [labels[i] for i in temp_indices]
-    val_indices, test_indices = train_test_split(
-        temp_indices,
-        train_size=val_size,
-        stratify=temp_labels,
-        random_state=seed
-    )
-
-    train_samples = [full_dataset.samples[i] for i in train_indices]
-    val_samples = [full_dataset.samples[i] for i in val_indices]
-    test_samples = [full_dataset.samples[i] for i in test_indices]
-
-    train_dataset = TeaLeafDataset(data_dir, transform=train_transform, subset='train', image_size=image_size)
-    train_dataset.samples = train_samples
-
-    val_dataset = TeaLeafDataset(data_dir, transform=val_transform, subset='val', image_size=image_size)
-    val_dataset.samples = val_samples
-
-    test_dataset = TeaLeafDataset(data_dir, transform=test_transform, subset='test', image_size=image_size)
-    test_dataset.samples = test_samples
-
-    generator = torch.Generator().manual_seed(seed)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
-                              num_workers=num_workers, pin_memory=pin_memory, drop_last=True, generator=generator)
-
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, 
-                            num_workers=num_workers, pin_memory=pin_memory)
-
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, 
-                             num_workers=num_workers, pin_memory=pin_memory)
-
-    logger.info(f"Data Split")
-    logger.info(f"  - Train: {len(train_dataset)}")
-    logger.info(f"  - Val:   {len(val_dataset)}")
-    logger.info(f"  - Test:  {len(test_dataset)}")
-
-    return train_loader, val_loader, test_loader, train_dataset.class_weights
-
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", type=str, required=True, help="Path to tea leaf dataset")
-    args = parser.parse_args()
-
-    train_loader, val_loader, test_loader, class_weights = create_data_loaders(
-        data_dir=args.data_dir,
-        batch_size=32,
-        train_split=0.8,
-        val_split=0.1,
-        test_split=0.1,
-        image_size=(224, 224),
-        num_workers=0,
-        pin_memory=True
-    )
-
-if __name__ == "__main__":
-    main()
+    return build_subset(train_idx, 'train', 'train'), build_subset(val_idx, 'val', 'val'), \
+           build_subset(test_idx, 'test', 'test'), full_ds.class_weights
