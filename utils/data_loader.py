@@ -10,8 +10,6 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import train_test_split
 
-
-# Setup logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,18 +19,21 @@ class TeaLeafDataset(Dataset):
         data_dir: str,
         transform: Optional[callable] = None,
         subset: str = 'train',
-        image_size: Tuple[int, int] = (224, 224)
+        image_size: Tuple[int, int] = (224, 224),
+        class_names: Optional[List[str]] = None
     ):
         self.data_dir = data_dir
         self.transform = transform
         self.subset = subset
         self.image_size = image_size
 
-        # Get class names
-        self.class_names = sorted([
-            entry for entry in os.listdir(data_dir)
-            if os.path.isdir(os.path.join(data_dir, entry))
-        ])
+        if class_names is not None:
+            self.class_names = class_names  
+        else:
+            self.class_names = sorted([
+                entry for entry in os.listdir(data_dir)
+                if os.path.isdir(os.path.join(data_dir, entry))
+            ])
 
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.class_names)}
         self.idx_to_class = {idx: cls_name for cls_name, idx in self.class_to_idx.items()}
@@ -41,14 +42,14 @@ class TeaLeafDataset(Dataset):
         for cls_name, idx in self.class_to_idx.items():
             logger.info(f"  {cls_name}: {idx}")
 
-        self.samples = self._load_samples()
-        self.class_weights = self._calculate_class_weights()
+        self.samples = self.load_samples()
+        self.class_weights = self.calculate_class_weights()
 
         logger.info(f"Total samples in '{subset}' set: {len(self.samples)}")
-        self._log_class_distribution()
+        self.log_class_distribution()
         logger.info(f"Class Weights (Tensor): {self.class_weights}\n")
 
-    def _load_samples(self) -> List[Tuple[str, int]]:
+    def load_samples(self) -> List[Tuple[str, int]]:
         """Load all image paths and corresponding labels"""
         samples = []
         for class_name in self.class_names:
@@ -59,7 +60,7 @@ class TeaLeafDataset(Dataset):
                     samples.append((img_path, self.class_to_idx[class_name]))
         return samples
 
-    def _calculate_class_weights(self) -> torch.Tensor:
+    def calculate_class_weights(self) -> torch.Tensor:
         """Calculate balanced class weights"""
         class_counts = np.zeros(len(self.class_names), dtype=np.int64)
         for _, label in self.samples:
@@ -76,7 +77,7 @@ class TeaLeafDataset(Dataset):
                 class_weights.append(weight)
         return torch.tensor(class_weights, dtype=torch.float32)
 
-    def _log_class_distribution(self):
+    def log_class_distribution(self):
         """Log the distribution of samples per class"""
         class_counts = np.zeros(len(self.class_names), dtype=np.int64)
         for _, label in self.samples:
@@ -215,7 +216,7 @@ def main():
         val_split=0.1,
         test_split=0.1,
         image_size=(224, 224),
-        num_workers=1,
+        num_workers=0,
         pin_memory=True
     )
 
