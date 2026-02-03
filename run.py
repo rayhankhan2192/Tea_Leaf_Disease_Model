@@ -84,8 +84,6 @@ def main():
         lr=args.lr
     )
 
-    # test_metrics = trainer.evaluate(test_loader)
-    # logger.info(f"Final Results - Accuracy: {test_metrics['accuracy']:.4f}")
 
     test_metrics, test_loss = trainer.evaluate(test_loader) 
     logger.info(f"Final Results - Accuracy: {test_metrics['accuracy']:.4f}")
