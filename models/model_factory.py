@@ -7,6 +7,9 @@ import os
 import logging
 
 from models.cnn_model import CustomCNN
+from models.ViTB16 import ViTB16
+from models.EfficientNetV2B3 import EfficientNetV2B3
+from models.MobileNetV3 import MobileNetV3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,6 +18,12 @@ logger = logging.getLogger(__name__)
 def get_model(model_name: str, num_classes: int, pretrained: bool = True, dropout_rate: float = 0.5):
     if model_name == 'customcnn':
         return CustomCNN(num_classes=num_classes)
+    elif model_name == 'vitb16':
+        return ViTB16(num_classes=num_classes, dropout_rate=dropout_rate)
+    elif model_name == 'efficientnetb3':
+        return EfficientNetV2B3(num_classes=num_classes, dropout_rate=dropout_rate)
+    elif model_name == 'mobilenetv3':
+        return MobileNetV3(num_classes=num_classes, pretrained=pretrained)
     else:
         raise ValueError(f"Model {model_name} is not supported.")
     
