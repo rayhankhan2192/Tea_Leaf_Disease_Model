@@ -2,3 +2,7 @@ Dataset/
 GarbageCode/
 venv/
 runs1/
+__pycache__/
+*.pyc
+checkpoints/
+Result/
