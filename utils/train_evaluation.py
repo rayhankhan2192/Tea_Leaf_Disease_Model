@@ -5,8 +5,13 @@ import numpy as np
 import os
 import json
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, roc_auc_score
 from tqdm import tqdm
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class EarlyStopping:
     def __init__(self, patience=7, min_delta=0.001):
@@ -44,6 +49,8 @@ class Metrics:
                 metrics['auc'] = 0.0
 
         cm = confusion_matrix(y_true, y_pred, labels=range(len(self.class_names)))
+        metrics['cm_data'] = cm # Store raw matrix for the plotter
+        
         for i, name in enumerate(self.class_names):
             tp = cm[i, i]
             fn = cm[i, :].sum() - tp
@@ -61,7 +68,6 @@ class Trainer:
         self.model_name = model_name
         self.metrics_calc = Metrics(class_names)
         
-        # Directory Structure: Result/{modelname}/all data
         self.base_dir = os.path.join('Result', self.model_name)
         self.ckpt_dir = os.path.join(self.base_dir, 'checkpoints')
         self.logs_dir = os.path.join(self.base_dir, 'logs')
@@ -69,8 +75,11 @@ class Trainer:
         os.makedirs(self.logs_dir, exist_ok=True)
         
         self.history = {
-            'train_loss': [], 'val_loss': [],
-            'train_accuracy': [], 'val_accuracy': [], 'val_auc': []
+            'train_accuracy': [],
+            'train_loss': [],
+            'val_accuracy': [],
+            'val_loss': [],
+            'val_auc': []
         }
 
     def train(self, train_loader, val_loader, epochs=50, criterion=None, lr=0.001):
@@ -81,9 +90,10 @@ class Trainer:
 
         for epoch in range(epochs):
             self.model.train()
-            train_loss, train_preds, train_labels = 0.0, [], []
+            epoch_train_loss = 0.0
+            all_train_preds, all_train_labels = [], []
             
-            for imgs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1} Train"):
+            for imgs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
                 imgs, labels = imgs.to(self.device), labels.to(self.device)
                 optimizer.zero_grad()
                 outputs = self.model(imgs)
@@ -91,16 +101,16 @@ class Trainer:
                 loss.backward()
                 optimizer.step()
                 
-                train_loss += loss.item()
+                epoch_train_loss += loss.item()
                 _, preds = torch.max(outputs, 1)
-                train_preds.extend(preds.cpu().numpy())
-                train_labels.extend(labels.cpu().numpy())
+                all_train_preds.extend(preds.cpu().numpy())
+                all_train_labels.extend(labels.cpu().numpy())
 
-            avg_train_loss = train_loss / len(train_loader)
-            train_acc = accuracy_score(train_labels, train_preds)
-
-            # Validation Phase
-            val_results, val_loss = self.evaluate(val_loader, criterion)
+            avg_train_loss = epoch_train_loss / len(train_loader)
+            train_acc = accuracy_score(all_train_labels, all_train_preds)
+            
+            # Validation call (we don't save CM every epoch to save time)
+            val_results, val_loss = self.evaluate(val_loader, criterion, save_cm=False)
             
             self.history['train_loss'].append(avg_train_loss)
             self.history['train_accuracy'].append(train_acc)
@@ -108,35 +118,62 @@ class Trainer:
             self.history['val_accuracy'].append(val_results['accuracy'])
             self.history['val_auc'].append(val_results.get('auc', 0.0))
 
-            print(f"\nEpoch {epoch+1}: Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f}")
-            print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_results['accuracy']:.4f} | Val AUC: {val_results.get('auc', 0.0):.4f}")
-
-            # Save per-round data in .json file
-            epoch_info = {
-                'epoch': epoch + 1, 'train_loss': avg_train_loss, 'train_acc': train_acc,
-                'val_loss': val_loss, 'val_acc': val_results['accuracy'], 'val_auc': val_results.get('auc', 0.0)
-            }
-            with open(os.path.join(self.logs_dir, f'epoch_{epoch+1}.json'), 'w') as f:
-                json.dump(epoch_info, f, indent=4)
+            logger.info(f"Epoch {epoch+1}: Train Acc={train_acc:.4f}, Val Acc={val_results['accuracy']:.4f}")
+            logger.info(f"           Train Loss={avg_train_loss:.4f}, Val Loss={val_loss:.4f}, Val AUC={val_results.get('auc', 0.0):.4f}")
 
             if val_results['accuracy'] > best_acc:
                 best_acc = val_results['accuracy']
                 torch.save(self.model.state_dict(), os.path.join(self.ckpt_dir, 'best_model.pth'))
 
-            if early_stop(val_loss): 
-                print("Early stopping triggered.")
+            if early_stop(val_loss):
+                logger.info(f"Early stopping at epoch {epoch+1}")
                 break
 
-        self.save_plots()
+        self.save_final_metrics()
+        self.plot_history()
 
-    def evaluate(self, loader, criterion=None):
+    def save_final_metrics(self):
+        final_path = os.path.join(self.base_dir, 'final_trainMetrics.json')
+        with open(final_path, 'w') as f:
+            json.dump(self.history, f, indent=4)
+
+    def plot_history(self):
+        plt.figure(figsize=(12, 4))
+        plt.subplot(1, 2, 1)
+        plt.plot(self.history['train_loss'], label='Train')
+        plt.plot(self.history['val_loss'], label='Val')
+        plt.title('Loss History'); plt.legend(); plt.grid(True)
+
+        plt.subplot(1, 2, 2)
+        plt.plot(self.history['train_accuracy'], label='Train')
+        plt.plot(self.history['val_accuracy'], label='Val')
+        plt.title('Accuracy History'); plt.legend(); plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.base_dir, 'training_curves.png'))
+        plt.close()
+
+    def save_confusion_matrix(self, cm, filename='confusion_matrix.png'):
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                    xticklabels=self.class_names, yticklabels=self.class_names)
+        plt.ylabel('Actual')
+        plt.xlabel('Predicted')
+        plt.title('Confusion Matrix')
+        plt.savefig(os.path.join(self.base_dir, filename))
+        plt.close()
+
+    def evaluate(self, loader, criterion=None, save_cm=True):
         self.model.eval()
         all_preds, all_labels, all_probs, total_loss = [], [], [], 0.0
+        
         with torch.no_grad():
             for imgs, labels in loader:
                 imgs, labels = imgs.to(self.device), labels.to(self.device)
                 outputs = self.model(imgs)
-                if criterion: total_loss += criterion(outputs, labels).item()
+                if criterion:
+                    total_loss += criterion(outputs, labels).item()
+                
                 probs = torch.softmax(outputs, dim=1)
                 _, preds = torch.max(outputs, 1)
                 all_preds.extend(preds.cpu().numpy())
@@ -144,24 +181,9 @@ class Trainer:
                 all_probs.extend(probs.cpu().numpy())
         
         metrics = self.metrics_calc.calculate_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
+        
+        if save_cm:
+            self.save_confusion_matrix(metrics['cm_data'])
+            
         avg_loss = total_loss / len(loader) if len(loader) > 0 else 0
         return metrics, avg_loss
-
-    def save_plots(self):
-        """Generates and saves accuracy/loss plots"""
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 2, 1)
-        plt.plot(self.history['train_loss'], label='Train Loss')
-        plt.plot(self.history['val_loss'], label='Val Loss')
-        plt.title('Training and Validation Loss')
-        plt.xlabel('Epoch'); plt.ylabel('Loss'); plt.legend(); plt.grid(True)
-
-        plt.subplot(1, 2, 2)
-        plt.plot(self.history['train_accuracy'], label='Train Accuracy')
-        plt.plot(self.history['val_accuracy'], label='Val Accuracy')
-        plt.title('Training and Validation Accuracy')
-        plt.xlabel('Epoch'); plt.ylabel('Accuracy'); plt.legend(); plt.grid(True)
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.base_dir, 'training_metrics.png'))
-        plt.close()
