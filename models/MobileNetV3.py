@@ -3,27 +3,24 @@ import torch.nn as nn
 from torchvision import models
 
 class MobileNetV3(nn.Module):
-    def __init__(self, num_classes=4, pretrained=True):
+    def __init__(self, num_classes=4, pretrained=True, dropout_rate=0.3):
+        self.dropout_rate = dropout_rate
         super(MobileNetV3, self).__init__()
-        # Load pre-trained MobileNetV3-Large for high-quality RGB features
-        self.backbone = models.mobilenet_v3_large(pretrained=pretrained)
-        
-        # Access the input features for the original classifier
-        num_features = self.backbone.classifier[0].in_features
-        self.backbone.classifier = nn.Identity() # Remove the default head
-
-        # Specialized MLP Head for Tea Diseases
+        self.backbone = models.mobilenet_v3_large(pretrained=pretrained).features
+        num_features = 960 
         self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1), 
+            nn.Flatten(),
             nn.Linear(num_features, 512),
-            nn.Hardswish(inplace=True), # MobileNetV3 native activation
-            nn.BatchNorm1d(512),
-            nn.Dropout(0.3),
+            nn.Hardswish(inplace=True), 
+            nn.BatchNorm1d(512),      
+            nn.Dropout(self.dropout_rate),
             nn.Linear(512, 256),
             nn.Hardswish(inplace=True),
             nn.Linear(256, num_classes)
         )
 
     def forward(self, x):
-        features = self.backbone(x)
-        return self.classifier(features)
-
+        x = self.backbone(x)  
+        x = self.classifier(x)
+        return x
