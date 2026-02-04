@@ -23,7 +23,7 @@ def get_model(model_name: str, num_classes: int, pretrained: bool = True, dropou
     elif model_name == 'efficientnetb3':
         return EfficientNetV2B3(num_classes=num_classes, dropout_rate=dropout_rate)
     elif model_name == 'mobilenetv3':
-        return MobileNetV3(num_classes=num_classes, pretrained=pretrained)
+        return MobileNetV3(num_classes=num_classes, pretrained=pretrained, dropout_rate=dropout_rate)
     else:
         raise ValueError(f"Model {model_name} is not supported.")
     
