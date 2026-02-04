@@ -17,25 +17,6 @@ logger = logging.getLogger(__name__)
 
 CLASSES = ['Blight', 'Healthy_Leaf', 'Helopeltis', 'Red_Rust']
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Tea Leaf Disease Standalone Training")
-    
-    # Data & Architecture
-    parser.add_argument("--data-dir", type=str, required=True, help="Path to dataset")
-    parser.add_argument("--model-name", type=str, default="customcnn", choices=["customcnn"], help="Model from factory")
-    parser.add_argument("--batch-size", type=int, default=32)
-    
-    # Training Hyperparameters
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--loss", type=str, default="crossentropy", choices=["crossentropy", "focal", "labelsmoothing"])
-    
-    # Early Stopping & Saving
-    parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping")
-    parser.add_argument("--save-dir", type=str, default="checkpoints")
-    
-    return parser.parse_args()
-
 def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,6 +69,25 @@ def main():
     test_metrics, test_loss = trainer.evaluate(test_loader) 
     logger.info(f"Final Results - Accuracy: {test_metrics['accuracy']:.4f}")
     logger.info(f"Final Results - Loss: {test_loss:.4f}")
+    
+def parse_args():
+    parser = argparse.ArgumentParser(description="Tea Leaf Disease Standalone Training")
+    
+    # Data & Architecture
+    parser.add_argument("--data-dir", type=str, required=True, help="Path to dataset")
+    parser.add_argument("--model-name", type=str, default="customcnn", choices=["customcnn", "vitb16", "efficientnetb3", "mobilenetv3"], help="Model from factory")
+    parser.add_argument("--batch-size", type=int, default=32)
+    
+    # Training Hyperparameters
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--loss", type=str, default="crossentropy", choices=["crossentropy", "focal", "labelsmoothing"])
+    
+    # Early Stopping & Saving
+    parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping")
+    parser.add_argument("--save-dir", type=str, default="checkpoints")
+    
+    return parser.parse_args()
 
 if __name__ == "__main__":
     main()
