@@ -10,6 +10,7 @@ from models.cnn_model import CustomCNN
 from models.ViTB16 import ViTB16
 from models.EfficientNetV2B3 import EfficientNetV2B3
 from models.MobileNetV3 import MobileNetV3
+from models.denseNet121 import DenseNet121Model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ def get_model(model_name: str, num_classes: int, pretrained: bool = True, dropou
         return EfficientNetV2B3(num_classes=num_classes, dropout_rate=dropout_rate)
     elif model_name == 'mobilenetv3':
         return MobileNetV3(num_classes=num_classes, pretrained=pretrained, dropout_rate=dropout_rate)
+    elif model_name == 'densenet121':
+        return DenseNet121Model(num_classes=num_classes, dropout_rate=dropout_rate)
     else:
         raise ValueError(f"Model {model_name} is not supported.")
     
