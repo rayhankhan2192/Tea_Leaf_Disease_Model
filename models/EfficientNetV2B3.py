@@ -4,13 +4,16 @@ from torchvision import models
 class EfficientNetV2B3(nn.Module):
     def __init__(self, num_classes: int = 4, dropout_rate: float = 0.3):
         super(EfficientNetV2B3, self).__init__()
-        # Load pre-trained EfficientNetV2-B3
-        self.backbone = models.efficientnet_v2_b3(weights=models.EfficientNet_V2_B3_Weights.DEFAULT)
+        try:
+            self.backbone = models.efficientnet_v2_b3(weights=models.EfficientNet_V2_B3_Weights.DEFAULT)
+        except AttributeError:
+            self.backbone = models.efficientnet_b3(weights=models.EfficientNet_B3_Weights.DEFAULT)
         
-        # Access the number of features before the original classifier
-        in_features = self.backbone.classifier[1].in_features
-        
-        # Replace the original classifier with a custom MLP head
+        if hasattr(self.backbone, 'classifier') and isinstance(self.backbone.classifier, nn.Sequential):
+            in_features = self.backbone.classifier[1].in_features
+        else:
+            in_features = self.backbone.classifier.in_features
+
         self.backbone.classifier = nn.Sequential(
             nn.Linear(in_features, 1024),
             nn.ReLU(inplace=True),
