@@ -142,12 +142,12 @@ class Trainer:
         plt.subplot(1, 2, 1)
         plt.plot(self.history['train_loss'], label='Train')
         plt.plot(self.history['val_loss'], label='Val')
-        plt.title('Loss History'); plt.legend(); plt.grid(True)
+        plt.title(f'Loss History - {self.model_name}'); plt.legend(); plt.grid(True)
 
         plt.subplot(1, 2, 2)
         plt.plot(self.history['train_accuracy'], label='Train')
         plt.plot(self.history['val_accuracy'], label='Val')
-        plt.title('Accuracy History'); plt.legend(); plt.grid(True)
+        plt.title(f'Accuracy History - {self.model_name}'); plt.legend(); plt.grid(True)
         
         plt.tight_layout()
         plt.savefig(os.path.join(self.base_dir, 'training_curves.png'))
@@ -159,7 +159,7 @@ class Trainer:
                     xticklabels=self.class_names, yticklabels=self.class_names)
         plt.ylabel('Actual')
         plt.xlabel('Predicted')
-        plt.title('Confusion Matrix')
+        plt.title(f'Confusion Matrix - {self.model_name}')
         plt.savefig(os.path.join(self.base_dir, filename))
         plt.close()
 
