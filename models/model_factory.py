@@ -11,6 +11,8 @@ from models.ViTB16 import ViTB16
 from models.EfficientNetV2B3 import EfficientNetV2B3
 from models.MobileNetV3 import MobileNetV3
 from models.denseNet121 import DenseNet121Model
+from models.VGG19 import VGG19Model
+from models.ResNet50 import ResNet50Model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,6 +29,10 @@ def get_model(model_name: str, num_classes: int, pretrained: bool = True, dropou
         return MobileNetV3(num_classes=num_classes, pretrained=pretrained, dropout_rate=dropout_rate)
     elif model_name == 'densenet121':
         return DenseNet121Model(num_classes=num_classes, dropout_rate=dropout_rate)
+    elif model_name == 'vgg19':
+        return VGG19Model(num_classes=num_classes, dropout_rate=dropout_rate)
+    elif model_name == 'resnet50':
+        return ResNet50Model(num_classes=num_classes, dropout_rate=dropout_rate)
     else:
         raise ValueError(f"Model {model_name} is not supported.")
     

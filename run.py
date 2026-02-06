@@ -75,7 +75,7 @@ def parse_args():
     
     # Data & Architecture
     parser.add_argument("--data-dir", type=str, required=True, help="Path to dataset")
-    parser.add_argument("--model-name", type=str, default="customcnn", choices=["customcnn", "vitb16", "efficientnetb3", "mobilenetv3", "densenet121"], help="Model from factory")
+    parser.add_argument("--model-name", type=str, default="customcnn", choices=["customcnn", "vitb16", "efficientnetb3", "mobilenetv3", "densenet121", "vgg19", "resnet50"], help="Model from factory")
     parser.add_argument("--batch-size", type=int, default=16)
     
     # Training Hyperparameters
