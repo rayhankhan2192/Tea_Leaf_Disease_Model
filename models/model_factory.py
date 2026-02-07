@@ -13,6 +13,7 @@ from models.MobileNetV3 import MobileNetV3
 from models.denseNet121 import DenseNet121Model
 from models.VGG19 import VGG19Model
 from models.ResNet50 import ResNet50Model
+from models.Hybrid_CNN_Transformer import TeaLeafHybridModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ def get_model(model_name: str, num_classes: int, pretrained: bool = True, dropou
         return VGG19Model(num_classes=num_classes, dropout_rate=dropout_rate)
     elif model_name == 'resnet50':
         return ResNet50Model(num_classes=num_classes, dropout_rate=dropout_rate)
+    elif model_name == 'hybridmodel':
+        return TeaLeafHybridModel(num_classes=num_classes, dropout_rate=dropout_rate)
     else:
         raise ValueError(f"Model {model_name} is not supported.")
     

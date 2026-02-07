@@ -9,13 +9,15 @@ class VGG19Model(nn.Module):
         # VGG19 classifier starts at index 0
         in_features = self.backbone.classifier[0].in_features
         
-        # Replace the entire classifier block for better regularization
-        self.backbone.classifier = nn.Sequential(
+        # MLP head
+        self.backbone.fc = nn.Sequential(
             nn.Linear(in_features, 1024),
             nn.ReLU(inplace=True),
+            nn.BatchNorm1d(1024),          # Stabilizes deep feature transition
             nn.Dropout(p=dropout_rate),
             nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
+            nn.BatchNorm1d(512),          # Prevents gradient collapse
             nn.Dropout(p=dropout_rate * 0.5),
             nn.Linear(512, num_classes)
         )
