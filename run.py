@@ -23,12 +23,15 @@ def main():
     num_classes = len(CLASSES)
     logger.info(f"Using device: {device}")
     logger.info(f"Number of classes: {num_classes}")
+    logger.info(f"Äugmentations Strategy: {args.aug_type.upper()}")
 
     # Load Data
     train_loader, val_loader, test_loader, class_weights = create_data_loaders(
         data_dir=args.data_dir,
         batch_size=args.batch_size,
-        class_names=CLASSES
+        class_names=CLASSES,
+        image_size=(224, 224),
+        aug_type=args.aug_type
     )
 
     train_labels = train_loader.dataset.targets
@@ -52,11 +55,13 @@ def main():
         model=model, 
         device=device, 
         class_names=CLASSES, 
-        model_name=args.model_name
+        model_name=args.model_name,
+        class_weights=class_weights,
+        aug_type= args.aug_type,
     )
 
     # Run Training
-    logger.info(f"Starting training with {args.model_name} and {args.loss} loss...")
+    logger.info(f"Starting training: {args.model_name} | Aug: {args.aug_type} | Loss: {args.loss}...")
     trainer.train(
         train_loader=train_loader, 
         val_loader=val_loader, 
@@ -77,6 +82,9 @@ def parse_args():
     parser.add_argument("--data-dir", type=str, required=True, help="Path to dataset")
     parser.add_argument("--model-name", type=str, default="customcnn", choices=["customcnn", "vitb16", "efficientnetb3", "mobilenetv3", "densenet121", "vgg19", "resnet50", "hybridmodel"], help="Model from factory")
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--aug-type", type=str, default="standard", 
+                        choices=["none", "standard", "enhanced"], 
+                        help="Choose training pipeline: none, standard, or enhanced (CLAHE + Unsharp)")
     
     # Training Hyperparameters
     parser.add_argument("--epochs", type=int, default=20)

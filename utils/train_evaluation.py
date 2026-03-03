@@ -61,11 +61,13 @@ class Metrics:
         return metrics
 
 class Trainer:
-    def __init__(self, model, device, class_names, model_name='customcnn'):
+    def __init__(self, model, device, class_names, model_name='customcnn', aug_type='standard', class_weights = None):
         self.model = model.to(device)
         self.device = device
         self.class_names = class_names
-        self.model_name = model_name
+        self.aug_type = aug_type
+        self.model_name = f'{model_name}_{aug_type}'
+        self.class_weights = class_weights
         self.metrics_calc = Metrics(class_names)
         
         self.base_dir = os.path.join('Result', self.model_name)
@@ -79,7 +81,8 @@ class Trainer:
             'train_loss': [],
             'val_accuracy': [],
             'val_loss': [],
-            'val_auc': []
+            'val_auc': [],
+            'train_auc': [],
         }
 
     def train(self, train_loader, val_loader, epochs=50, criterion=None, lr=0.001):
@@ -134,6 +137,8 @@ class Trainer:
 
     def save_final_metrics(self):
         final_path = os.path.join(self.base_dir, 'final_trainMetrics.json')
+        self.history['aug_type'] = self.aug_type
+        self.history['model_name'] = self.model_name
         with open(final_path, 'w') as f:
             json.dump(self.history, f, indent=4)
 
