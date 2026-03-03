@@ -4,7 +4,7 @@ import torch.nn as nn
 import logging
 import os
 
-from utils.data_loader import create_data_loaders
+from utils.data_loader import create_data_loaders, save_augmentation_samples
 from utils.train_evaluation import Trainer
 from models.model_factory import get_model, FocalLoss, LabelSmoothingLoss
 from sklearn.utils.class_weight import compute_class_weight
@@ -49,6 +49,8 @@ def main():
         criterion = LabelSmoothingLoss(num_classes=num_classes, smoothing=0.1)
     else:
         criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    
+    
 
     # Initialize Trainer
     trainer = Trainer(
@@ -59,6 +61,13 @@ def main():
         class_weights=class_weights,
         aug_type= args.aug_type,
     )
+
+    if args.save_samples > 0:
+        save_augmentation_samples(
+            train_loader = train_loader,
+            save_dir = trainer.base_dir,
+            num_samples = args.save_samples
+        )
 
     # Run Training
     logger.info(f"Starting training: {args.model_name} | Aug: {args.aug_type} | Loss: {args.loss}...")
@@ -85,6 +94,9 @@ def parse_args():
     parser.add_argument("--aug-type", type=str, default="standard", 
                         choices=["none", "standard", "enhanced"], 
                         help="Choose training pipeline: none, standard, or enhanced (CLAHE + Unsharp)")
+
+    parser.add_argument("--save-samples", type=int, default=20, 
+                        help="Number of images to save for each augmentation type (0 to disable)")
     
     # Training Hyperparameters
     parser.add_argument("--epochs", type=int, default=20)
