@@ -84,34 +84,88 @@ class TeaLeafDataset(Dataset):
             image = self.transform(image=image)['image']
         return image, label
 
-def get_tea_leaf_transforms(image_size, mode):
-    if mode == 'train':
+def get_tea_leaf_transforms(image_size: Tuple[int, int], mode: str):
+    """
+    Three modes of augmentation:
+    1. 'raw': No augmentation, just resizing and normalization.
+    2. 'standard': General geometric and color augmentations.
+    3. 'enhanced': CLAHE + Sharpening + General augmentations.
+    """
+
+    base_norm = [
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+    ]
+
+    if mode == 'none':
         return A.Compose([
+            A.Resize(image_size[0], image_size[1]),
+            *base_norm
+        ])
+
+    elif mode == 'standard':
+        return A.Compose([
+            A.Resize(image_size[0], image_size[1]),
             A.Rotate(limit=15, p=0.7),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.2),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ToTensorV2()
+            *base_norm
         ])
-    return A.Compose([
-        A.Resize(image_size[0], image_size[1]),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ToTensorV2()
-    ])
+    elif mode == 'enhanced':
+        return A.Compose([
+            A.Resize(image_size[0], image_size[1]),
+            # CLAHE: clip_limit 2.0, tile_grid 8x8
+            A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=1.0),
+            # Unsharp Masking via Sharpen: alpha 1.5 matches your weight amount
+            A.Sharpen(alpha=(1.5, 1.5), lightness=(1.0, 1.0), p=1.0),
+            # Followed by standard training augmentations
+            A.Rotate(limit=15, p=0.7),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(p=0.2),
+            *base_norm
+        ])
+    return A.Compose([A.Resize(image_size[0], image_size[1]), *base_norm])
+    
 
-def create_data_loaders(data_dir, batch_size=32, class_names=None, image_size=(224, 224)):
+def create_data_loaders(
+    data_dir: str, 
+    batch_size: int = 32, 
+    aug_type: str = 'standard', 
+    class_names: Optional[List[str]] = None, 
+    image_size: Tuple[int, int] = (224, 224)
+):
     # Scan disk ONLY ONCE
     full_ds = TeaLeafDataset(data_dir, subset='full', class_names=class_names, image_size=image_size)
     
-    train_idx, temp_idx = train_test_split(range(len(full_ds)), train_size=0.8, stratify=full_ds.targets, random_state=42)
-    val_idx, test_idx = train_test_split(temp_idx, train_size=0.5, stratify=[full_ds.targets[i] for i in temp_idx], random_state=42)
+    train_idx, temp_idx = train_test_split(
+        range(len(full_ds)), 
+        train_size=0.8, 
+        stratify=full_ds.targets, 
+        random_state=42)
+    val_idx, test_idx = train_test_split(
+        temp_idx, 
+        train_size=0.5, 
+        stratify=[full_ds.targets[i] for i in temp_idx],
+        random_state=42)
 
-    def build_subset(indices, subset, mode):
-        ds = TeaLeafDataset(data_dir, transform=get_tea_leaf_transforms(image_size, mode), subset=subset, class_names=full_ds.class_names)
+    def build_subset(indices, subset_name):
+        # Use the requested aug_type for training, otherwise use 'raw' for Val/Test
+        mode = aug_type if subset_name == 'train' else 'val'
+        
+        ds = TeaLeafDataset(
+            data_dir, 
+            transform=get_tea_leaf_transforms(image_size, mode), 
+            subset=subset_name, 
+            class_names=full_ds.class_names
+        )
         ds.samples = [full_ds.samples[i] for i in indices]
         ds.targets = [s[1] for s in ds.samples]
-        ds.log_summary() # Logs once per split
-        return DataLoader(ds, batch_size=batch_size, shuffle=(mode=='train'))
+        ds.log_summary()
+        
+        return DataLoader(ds, batch_size=batch_size, shuffle=(subset_name == 'train'))
 
-    return build_subset(train_idx, 'train', 'train'), build_subset(val_idx, 'val', 'val'), \
-           build_subset(test_idx, 'test', 'test'), full_ds.class_weights
+    train_loader = build_subset(train_idx, 'train')
+    val_loader = build_subset(val_idx, 'val')
+    test_loader = build_subset(test_idx, 'test')
+
+    return train_loader, val_loader, test_loader, full_ds.class_weights
